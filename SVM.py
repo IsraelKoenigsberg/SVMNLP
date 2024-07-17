@@ -1,12 +1,12 @@
-import pandas as pd  # Importing pandas for data manipulation
-from sklearn.feature_extraction.text import TfidfVectorizer  # For converting text to numerical representation
-from sklearn.model_selection import train_test_split  # For splitting data into training and testing sets
-from sklearn.svm import SVC  # Importing Support Vector Classifier
-from sklearn.linear_model import LogisticRegression  # Importing Logistic Regression
-from sklearn.ensemble import VotingClassifier  # Importing Voting Classifier for ensemble method
-from sklearn.metrics import accuracy_score, classification_report  # For model evaluation metrics
-from joblib import dump, load  # For saving and loading models
-import os  # For checking if files exist
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import VotingClassifier, RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from joblib import dump, load
+import os
 
 # Load the data from the CSV file
 data = pd.read_csv('dataset.csv')
@@ -17,12 +17,12 @@ labels = data['Biased']
 
 # Check if models and vectorizer are already saved
 if os.path.exists('svm_model.joblib') and os.path.exists('log_reg_model.joblib') and os.path.exists(
-        'vectorizer.joblib'):
+        'vectorizer.joblib') and os.path.exists('random_forest_model.joblib'):
     # Load the models and vectorizer if they are already saved
-
     svm = load('svm_model.joblib')
     log_reg = load('log_reg_model.joblib')
     vectorizer = load('vectorizer.joblib')
+    rf = load('random_forest_model.joblib')
 else:
     # Convert the text data into numerical values using TF-IDF
     vectorizer = TfidfVectorizer(stop_words='english', max_df=0.7)
@@ -32,69 +32,77 @@ else:
     X_train, X_test, y_train, y_test = train_test_split(X, labels, test_size=0.2, random_state=42)
 
     # Create and train an SVM classifier
-    svm = SVC(kernel='linear', class_weight='balanced')  # Uses balanced class weight since antisemitic text is the
-    # great minority
+    svm = SVC(kernel='linear', class_weight='balanced')
     svm.fit(X_train, y_train)
 
     # Create and train a Logistic Regression classifier
     log_reg = LogisticRegression(class_weight='balanced')
     log_reg.fit(X_train, y_train)
 
+    # Create and train a Random Forest classifier
+    rf = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42)
+    rf.fit(X_train, y_train)
+
     # Save the models and vectorizer for future use
     dump(svm, 'svm_model.joblib')
     dump(log_reg, 'log_reg_model.joblib')
     dump(vectorizer, 'vectorizer.joblib')
+    dump(rf, 'random_forest_model.joblib')
 
 # Convert the text data into numerical values using the loaded vectorizer
 X = vectorizer.transform(texts)
 
 # Create an ensemble classifier using VotingClassifier
-ensemble_clf = VotingClassifier(estimators=[('svm', svm), ('log_reg', log_reg)], voting='hard')
+ensemble_clf = VotingClassifier(estimators=[('svm', svm), ('log_reg', log_reg), ('rf', rf)], voting='hard')
 ensemble_clf.fit(X, labels)
 
 # Split the data into training and testing sets for evaluation
 X_train, X_test, y_train, y_test = train_test_split(X, labels, test_size=0.2, random_state=42)
 
-# Make predictions on the test data using SVM
+# Make predictions on the test data using all classifiers
 y_pred_svm = svm.predict(X_test)
-
-# Make predictions on the test data using Logistic Regression
 y_pred_log_reg = log_reg.predict(X_test)
-
-# Make predictions on the test data using Ensemble Classifier
+y_pred_rf = rf.predict(X_test)
 y_pred_ensemble = ensemble_clf.predict(X_test)
 
-# Evaluate the performance of the SVM model
+# Evaluate the performance of the classifiers
 print(f'SVM Accuracy: {accuracy_score(y_test, y_pred_svm)}')
-
-# Evaluate the performance of the Logistic Regression model
-print(f'Logistic Regression Accuracy: {accuracy_score(y_test, y_pred_log_reg)}')
-
-# Evaluate the performance of the Ensemble model
-print(f'Ensemble Accuracy: {accuracy_score(y_test, y_pred_ensemble)}')
-
-# Classification report for SVM
 print("SVM Classification Report:")
 print(classification_report(y_test, y_pred_svm, target_names=['(0) Non-antisemitic', '(1) Antisemitic']))
 
-# Classification report for Logistic Regression
+print(f'Logistic Regression Accuracy: {accuracy_score(y_test, y_pred_log_reg)}')
 print("Logistic Regression Classification Report:")
 print(classification_report(y_test, y_pred_log_reg, target_names=['(0) Non-antisemitic', '(1) Antisemitic']))
 
-# Classification report for Ensemble model
+print(f'Random Forest Accuracy: {accuracy_score(y_test, y_pred_rf)}')
+print("Random Forest Classification Report:")
+print(classification_report(y_test, y_pred_rf, target_names=['(0) Non-antisemitic', '(1) Antisemitic']))
+
+print(f'Ensemble Accuracy: {accuracy_score(y_test, y_pred_ensemble)}')
 print("Ensemble Classification Report:")
 print(classification_report(y_test, y_pred_ensemble, target_names=['(0) Non-antisemitic', '(1) Antisemitic']))
 
 
-# Function to classify a new text using the ensemble classifier
-def classify_text_ensemble(text):
+# Function to classify a new text using all classifiers
+def classify_text(text):
     # Convert the new text to a TF-IDF vector
     text_vector = vectorizer.transform([text])
-    # Predict the label using the ensemble classifier
-    prediction = ensemble_clf.predict(text_vector)
-    # Map the prediction to a human-readable label
-    label = 'Antisemitic' if prediction == 1 else 'Non-antisemitic'
-    return label
+
+    # Get predictions from all classifiers
+    pred_svm = svm.predict(text_vector)
+    pred_log_reg = log_reg.predict(text_vector)
+    pred_rf = rf.predict(text_vector)
+    pred_ensemble = ensemble_clf.predict(text_vector)
+
+    # Map the predictions to human-readable labels
+    results = {
+        'SVM': 'Antisemitic' if pred_svm == 1 else 'Non-antisemitic',
+        'Logistic Regression': 'Antisemitic' if pred_log_reg == 1 else 'Non-antisemitic',
+        'Random Forest': 'Antisemitic' if pred_rf == 1 else 'Non-antisemitic',
+        'Ensemble': 'Antisemitic' if pred_ensemble == 1 else 'Non-antisemitic'
+    }
+
+    return results
 
 
 # Continuously prompt the user to enter text for classification
@@ -102,8 +110,11 @@ while True:
     user_input = input("Enter a text to classify (or type 'exit' to stop): ")
     if user_input.lower() == 'exit':
         break
-    # Get prediction from the ensemble classifier
-    result_ensemble = classify_text_ensemble(user_input)
+
+    # Get predictions from all classifiers
+    results = classify_text(user_input)
 
     print("-----------------")
-    print(f"Text: {user_input} | Ensemble Classification: {result_ensemble}")
+    print(f"Text: {user_input}")
+    for clf, result in results.items():
+        print(f"{clf} Classification: {result}")
