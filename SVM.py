@@ -15,22 +15,21 @@ data = pd.read_csv('dataset.csv')
 texts = data['Text']
 labels = data['Biased']
 
+# Convert the text data into numerical values using TF-IDF
+vectorizer = TfidfVectorizer(stop_words='english', max_df=0.7)
+X = vectorizer.fit_transform(texts)
+
+# Split the data into training and testing sets (80% training, 20% testing)
+X_train, X_test, y_train, y_test = train_test_split(X, labels, test_size=0.2, random_state=42)
+
 # Check if models and vectorizer are already saved
 if os.path.exists('svm_model.joblib') and os.path.exists('log_reg_model.joblib') and os.path.exists(
         'vectorizer.joblib') and os.path.exists('random_forest_model.joblib'):
-    # Load the models and vectorizer if they are already saved
+    # Load the models if they are already saved
     svm = load('svm_model.joblib')
     log_reg = load('log_reg_model.joblib')
-    vectorizer = load('vectorizer.joblib')
     rf = load('random_forest_model.joblib')
 else:
-    # Convert the text data into numerical values using TF-IDF
-    vectorizer = TfidfVectorizer(stop_words='english', max_df=0.7)
-    X = vectorizer.fit_transform(texts)
-
-    # Split the data into training and testing sets (80% training, 20% testing)
-    X_train, X_test, y_train, y_test = train_test_split(X, labels, test_size=0.2, random_state=42)
-
     # Create and train an SVM classifier
     svm = SVC(kernel='linear', class_weight='balanced')
     svm.fit(X_train, y_train)
@@ -49,15 +48,9 @@ else:
     dump(vectorizer, 'vectorizer.joblib')
     dump(rf, 'random_forest_model.joblib')
 
-# Convert the text data into numerical values using the loaded vectorizer
-X = vectorizer.transform(texts)
-
 # Create an ensemble classifier using VotingClassifier
 ensemble_clf = VotingClassifier(estimators=[('svm', svm), ('log_reg', log_reg), ('rf', rf)], voting='hard')
-ensemble_clf.fit(X, labels)
-
-# Split the data into training and testing sets for evaluation
-X_train, X_test, y_train, y_test = train_test_split(X, labels, test_size=0.2, random_state=42)
+ensemble_clf.fit(X_train, y_train)
 
 # Make predictions on the test data using all classifiers
 y_pred_svm = svm.predict(X_test)
@@ -82,7 +75,6 @@ print(f'Ensemble Accuracy: {accuracy_score(y_test, y_pred_ensemble)}')
 print("Ensemble Classification Report:")
 print(classification_report(y_test, y_pred_ensemble, target_names=['(0) Non-antisemitic', '(1) Antisemitic']))
 
-
 # Function to classify a new text using all classifiers
 def classify_text(text):
     # Convert the new text to a TF-IDF vector
@@ -95,15 +87,14 @@ def classify_text(text):
     pred_ensemble = ensemble_clf.predict(text_vector)
 
     # Map the predictions to human-readable labels
-    results = {
+    translated_results = {
         'SVM': 'Antisemitic' if pred_svm == 1 else 'Non-antisemitic',
         'Logistic Regression': 'Antisemitic' if pred_log_reg == 1 else 'Non-antisemitic',
         'Random Forest': 'Antisemitic' if pred_rf == 1 else 'Non-antisemitic',
         'Ensemble': 'Antisemitic' if pred_ensemble == 1 else 'Non-antisemitic'
     }
 
-    return results
-
+    return translated_results
 
 # Continuously prompt the user to enter text for classification
 while True:
